@@ -1,0 +1,183 @@
+import { env } from '$env/dynamic/private';
+import { json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { memeCardById } from '$lib/data/memeCards';
+import { situations } from '$lib/data/situations';
+import { fallbackJudge } from '$lib/game/fallbackJudge';
+import type { JudgeResult, MemeCard } from '$lib/types/game';
+
+const DEFAULT_BASE_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
+const DEFAULT_MODEL = 'qwen-plus';
+const UNSAFE_OUTPUT =
+	/\b(?:slur|kill|murder|suicide|sex|sexual|politic|race|religion|disab|disease|family|appearance|body|gender|identity)\w*\b/i;
+
+type ValidatedRequest = {
+	situation: string;
+	playerCard: MemeCard;
+	opponentCard: MemeCard;
+	betAmount: number;
+	currentClout: number;
+	round: number;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+	return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function validInteger(value: unknown, minimum: number, maximum: number): value is number {
+	return (
+		typeof value === 'number' && Number.isInteger(value) && value >= minimum && value <= maximum
+	);
+}
+
+function validateRequest(value: unknown): ValidatedRequest | null {
+	const body = asRecord(value);
+	const playerInput = asRecord(body?.playerCard);
+	const opponentInput = asRecord(body?.opponentCard);
+	if (
+		!body ||
+		typeof body.situation !== 'string' ||
+		body.situation.length > 220 ||
+		!playerInput ||
+		!opponentInput ||
+		typeof playerInput.id !== 'string' ||
+		typeof opponentInput.id !== 'string' ||
+		!validInteger(body.betAmount, 1, 10_000_000) ||
+		!validInteger(body.currentClout, 1, 10_000_000) ||
+		!validInteger(body.round, 1, 5)
+	) {
+		return null;
+	}
+
+	const situation = situations.find((item) => item === body.situation);
+	const playerCard = memeCardById.get(playerInput.id);
+	const opponentCard = memeCardById.get(opponentInput.id);
+	if (!situation || !playerCard || !opponentCard || playerCard.id === opponentCard.id) return null;
+	if (body.betAmount > body.currentClout) return null;
+
+	return {
+		situation,
+		playerCard,
+		opponentCard,
+		betAmount: body.betAmount,
+		currentClout: body.currentClout,
+		round: body.round
+	};
+}
+
+function cleanText(value: unknown, maximumLength: number): string | null {
+	if (typeof value !== 'string') return null;
+	const cleaned = value
+		.replace(/[\u0000-\u001f\u007f]/g, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, maximumLength);
+	if (!cleaned || UNSAFE_OUTPUT.test(cleaned)) return null;
+	return cleaned;
+}
+
+function parseJudgeResult(content: unknown): JudgeResult | null {
+	if (typeof content !== 'string' || content.length > 4_000) return null;
+	const jsonCandidate = content.match(/\{[\s\S]*\}/)?.[0];
+	if (!jsonCandidate) return null;
+	try {
+		const parsed = asRecord(JSON.parse(jsonCandidate));
+		if (!parsed || (parsed.winner !== 'player' && parsed.winner !== 'opponent')) return null;
+		if (typeof parsed.confidence !== 'number' || !Number.isFinite(parsed.confidence)) return null;
+		const reason = cleanText(parsed.reason, 280);
+		const roast = cleanText(parsed.roast, 180);
+		if (!reason || !roast) return null;
+		return {
+			winner: parsed.winner,
+			confidence: Math.round(Math.min(99, Math.max(50, parsed.confidence))),
+			reason,
+			roast
+		};
+	} catch {
+		return null;
+	}
+}
+
+function fallback(request: ValidatedRequest) {
+	return {
+		...fallbackJudge(
+			request.situation,
+			request.playerCard,
+			request.opponentCard,
+			request.round,
+			request.betAmount,
+			request.currentClout
+		),
+		source: 'fallback' as const
+	};
+}
+
+async function askQwen(request: ValidatedRequest): Promise<JudgeResult | null> {
+	const apiKey = env.QWEN_API_KEY?.trim();
+	if (!apiKey) return null;
+
+	const baseUrl = (env.QWEN_BASE_URL?.trim() || DEFAULT_BASE_URL).replace(/\/+$/, '');
+	const model = env.QWEN_MODEL?.trim() || DEFAULT_MODEL;
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 10_000);
+
+	const systemPrompt = `You are Qwen, the smug but fair judge in a fictional meme betting game.
+Compare two original fictional meme cards against one absurd situation and choose the card that semantically matches it best.
+Return only a valid JSON object with winner, confidence, reason, and roast. Winner must be "player" or "opponent". Confidence is an integer from 50 to 99. Reason is one or two short sentences. Roast is brief and criticises only the gameplay decision, never the person. Keep it playful and safe. No slurs, harassment, threats, sexual content, politics, violence, protected traits, appearance, family, health, or identity references.`;
+	const userPrompt = `Situation: ${request.situation}
+
+Player card: ${request.playerCard.name}
+Description: ${request.playerCard.description}
+Traits: ${request.playerCard.traits.join(', ')}
+
+Opponent card: ${request.opponentCard.name}
+Description: ${request.opponentCard.description}
+Traits: ${request.opponentCard.traits.join(', ')}
+
+Judge the semantic match fairly. Return JSON only.`;
+
+	try {
+		const response = await fetch(`${baseUrl}/chat/completions`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({
+				model,
+				temperature: 0.35,
+				max_tokens: 220,
+				messages: [
+					{ role: 'system', content: systemPrompt },
+					{ role: 'user', content: userPrompt }
+				]
+			}),
+			signal: controller.signal
+		});
+		if (!response.ok) return null;
+		const payload = asRecord(await response.json());
+		const choices = Array.isArray(payload?.choices) ? payload.choices : [];
+		const firstChoice = asRecord(choices[0]);
+		const message = asRecord(firstChoice?.message);
+		return parseJudgeResult(message?.content);
+	} catch {
+		return null;
+	} finally {
+		clearTimeout(timeout);
+	}
+}
+
+export const POST: RequestHandler = async ({ request }) => {
+	let body: unknown;
+	try {
+		body = await request.json();
+	} catch {
+		return json({ message: 'Malformed JSON request.' }, { status: 400 });
+	}
+
+	const validated = validateRequest(body);
+	if (!validated) return json({ message: 'Invalid judge request.' }, { status: 400 });
+
+	const qwenResult = await askQwen(validated);
+	return json(qwenResult ? { ...qwenResult, source: 'qwen' as const } : fallback(validated));
+};

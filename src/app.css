@@ -1,0 +1,109 @@
+:root {
+	--bg: #06060d;
+	--text: #f7f6fb;
+	--muted: #9591a7;
+	--purple: #8b5cf6;
+	--purple-soft: #bda5ff;
+	--acid: #c7ff41;
+	--danger: #ff214f;
+	--cyan: #00e5ff;
+	--font-display:
+		Impact, Haettenschweiler, 'Arial Narrow Bold', 'Franklin Gothic Heavy', sans-serif;
+	--font-body:
+		Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	font-family: var(--font-body);
+	font-synthesis: none;
+	color: var(--text);
+	background: var(--bg);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html {
+	min-width: 320px;
+	background: var(--bg);
+	scroll-behavior: smooth;
+}
+
+body {
+	min-width: 320px;
+	min-height: 100vh;
+	margin: 0;
+	background:
+		radial-gradient(circle at 14% 8%, rgba(139, 92, 246, 0.17), transparent 31rem),
+		radial-gradient(circle at 88% 84%, rgba(0, 229, 255, 0.09), transparent 28rem),
+		linear-gradient(145deg, #080712, #05050b 55%, #080612);
+}
+
+body::before {
+	content: '';
+	position: fixed;
+	z-index: -5;
+	inset: 0;
+	background: linear-gradient(
+		115deg,
+		rgba(139, 92, 246, 0.025),
+		rgba(0, 229, 255, 0.025),
+		rgba(199, 255, 65, 0.018)
+	);
+	background-size: 200% 200%;
+	animation: ambientGradient 14s ease-in-out infinite alternate;
+}
+
+button,
+input {
+	font: inherit;
+}
+button {
+	cursor: pointer;
+}
+button:focus-visible,
+input:focus-visible,
+a:focus-visible {
+	outline: 3px solid var(--cyan);
+	outline-offset: 3px;
+}
+button:disabled {
+	cursor: not-allowed;
+}
+
+.primary-button {
+	padding: 0.85rem 1.1rem;
+	border: 1px solid var(--acid);
+	border-radius: 0.7rem;
+	background: var(--acid);
+	color: #101505;
+	font-family: var(--font-display);
+	font-weight: 950;
+	letter-spacing: 0.04em;
+	box-shadow: 0 0 24px rgba(199, 255, 65, 0.2);
+}
+
+.sr-only {
+	position: absolute !important;
+	width: 1px !important;
+	height: 1px !important;
+	padding: 0 !important;
+	margin: -1px !important;
+	overflow: hidden !important;
+	clip: rect(0, 0, 0, 0) !important;
+	white-space: nowrap !important;
+	border: 0 !important;
+}
+
+@keyframes ambientGradient {
+	to {
+		background-position: 100% 100%;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html {
+		scroll-behavior: auto;
+	}
+	body::before {
+		animation: none;
+	}
+}
