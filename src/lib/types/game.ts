@@ -6,7 +6,10 @@ export type MemeCategory =
 	| 'Boss Energy'
 	| 'Deadline Panic'
 	| 'Mystic Weirdness'
-	| 'Pure Chaos';
+	| 'Pure Chaos'
+	| 'AI Custom';
+
+export type GameCategoryId = 'code' | 'everyday' | 'student' | 'ai';
 
 export type MemeCard = {
 	id: string;
@@ -36,10 +39,19 @@ export type JudgeRequest = {
 	betAmount: number;
 	currentClout: number;
 	round: number;
+	roundToken?: string;
+};
+
+export type GeneratedRoundResponse = {
+	situation: string;
+	playerOptions: MemeCard[];
+	opponentCard: MemeCard;
+	roundToken: string;
+	source: 'qwen' | 'fallback';
 };
 
 export type GamePhase =
-	'menu' | 'selecting' | 'betting' | 'judging' | 'result' | 'finished' | 'bankrupt';
+	'menu' | 'generating' | 'selecting' | 'betting' | 'judging' | 'result' | 'finished' | 'bankrupt';
 
 export type GameState = {
 	phase: GamePhase;
@@ -56,6 +68,10 @@ export type GameState = {
 	betAmount: number;
 	lastVerdict: JudgeResult | null;
 	verdictSource: 'qwen' | 'fallback' | null;
+	contentCategory: GameCategoryId;
+	customCategoryPrompt: string;
+	roundToken: string | null;
+	generationSource: 'qwen' | 'fallback' | null;
 };
 
 export type LeaderboardEntry = {
@@ -67,4 +83,5 @@ export type LeaderboardEntry = {
 	roundsCompleted: number;
 	rank: string;
 	createdAt: string;
+	category?: string;
 };

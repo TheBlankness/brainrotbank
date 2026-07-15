@@ -1,6 +1,5 @@
-import { memeCards } from '$lib/data/memeCards';
-import { situations } from '$lib/data/situations';
-import type { MemeCard } from '$lib/types/game';
+import { staticContentPacks } from '$lib/data/contentPacks';
+import type { GameCategoryId, MemeCard } from '$lib/types/game';
 
 export const INITIAL_CLOUT = 1000;
 export const MAX_ROUNDS = 5;
@@ -14,19 +13,28 @@ export function shuffled<T>(items: readonly T[]): T[] {
 	return copy;
 }
 
-export function dealRound(previousSituation = ''): {
+export function dealRound(
+	category: Exclude<GameCategoryId, 'ai'> = 'code',
+	previousSituation = ''
+): {
 	situation: string;
 	options: MemeCard[];
 } {
-	const availableSituations = situations.filter((item) => item !== previousSituation);
+	const pack = staticContentPacks[category];
+	const availableSituations = pack.situations.filter((item) => item !== previousSituation);
 	return {
 		situation: availableSituations[Math.floor(Math.random() * availableSituations.length)],
-		options: shuffled(memeCards).slice(0, 3)
+		options: shuffled(pack.cards).slice(0, 3)
 	};
 }
 
-export function chooseOpponent(playerCard: MemeCard): MemeCard {
-	return shuffled(memeCards.filter((card) => card.id !== playerCard.id))[0];
+export function chooseOpponent(
+	playerCard: MemeCard,
+	category: Exclude<GameCategoryId, 'ai'> = 'code'
+): MemeCard {
+	return shuffled(
+		staticContentPacks[category].cards.filter((card) => card.id !== playerCard.id)
+	)[0];
 }
 
 export function calculateBet(clout: number, percent: 25 | 50 | 100): number {

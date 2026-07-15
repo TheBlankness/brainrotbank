@@ -38,7 +38,9 @@
 						<span class="position">{index + 1}</span>
 						<div class="identity">
 							<strong>{entry.playerName}</strong>
-							<small>{entry.rank} · {entry.wins}W/{entry.losses}L</small>
+							<small
+								>{entry.rank}{entry.category ? ` · ${entry.category}` : ''} · {entry.wins}W/{entry.losses}L</small
+							>
 						</div>
 						<span class="score">{entry.score.toLocaleString()} <small>C</small></span>
 					</li>
@@ -143,8 +145,11 @@
 	}
 	.identity small {
 		margin-top: 0.14rem;
+		overflow: hidden;
 		color: var(--muted);
 		font-size: 0.66rem;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.score {
 		color: var(--cyan);

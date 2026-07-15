@@ -1,13 +1,11 @@
-import { env } from '$env/dynamic/private';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { memeCardById } from '$lib/data/memeCards';
-import { situations } from '$lib/data/situations';
+import { staticContentPacks } from '$lib/data/contentPacks';
 import { fallbackJudge } from '$lib/game/fallbackJudge';
+import { verifyRoundToken } from '$lib/server/generatedRoundToken';
+import { getRoundSigningSecret, requestQwenContent } from '$lib/server/qwenClient';
 import type { JudgeResult, MemeCard } from '$lib/types/game';
 
-const DEFAULT_BASE_URL = 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1';
-const DEFAULT_MODEL = 'qwen-plus';
 const UNSAFE_OUTPUT =
 	/\b(?:slur|kill|murder|suicide|sex|sexual|politic|race|religion|disab|disease|family|appearance|body|gender|identity)\w*\b/i;
 
@@ -30,7 +28,7 @@ function validInteger(value: unknown, minimum: number, maximum: number): value i
 	);
 }
 
-function validateRequest(value: unknown): ValidatedRequest | null {
+async function validateRequest(value: unknown): Promise<ValidatedRequest | null> {
 	const body = asRecord(value);
 	const playerInput = asRecord(body?.playerCard);
 	const opponentInput = asRecord(body?.opponentCard);
@@ -49,9 +47,32 @@ function validateRequest(value: unknown): ValidatedRequest | null {
 		return null;
 	}
 
-	const situation = situations.find((item) => item === body.situation);
-	const playerCard = memeCardById.get(playerInput.id);
-	const opponentCard = memeCardById.get(opponentInput.id);
+	let situation: string | undefined;
+	let playerCard: MemeCard | undefined;
+	let opponentCard: MemeCard | undefined;
+
+	if (typeof body.roundToken === 'string' && body.roundToken.length <= 12_000) {
+		const generated = await verifyRoundToken(body.roundToken, getRoundSigningSecret());
+		if (
+			!generated ||
+			generated.round !== body.round ||
+			generated.situation !== body.situation ||
+			generated.opponentCard.id !== opponentInput.id
+		)
+			return null;
+		situation = generated.situation;
+		playerCard = generated.playerOptions.find((card) => card.id === playerInput.id);
+		opponentCard = generated.opponentCard;
+	} else {
+		const pack = Object.values(staticContentPacks).find((candidate) =>
+			candidate.situations.some((item) => item === body.situation)
+		);
+		if (!pack) return null;
+		situation = body.situation;
+		playerCard = pack.cards.find((card) => card.id === playerInput.id);
+		opponentCard = pack.cards.find((card) => card.id === opponentInput.id);
+	}
+
 	if (!situation || !playerCard || !opponentCard || playerCard.id === opponentCard.id) return null;
 	if (body.betAmount > body.currentClout) return null;
 
@@ -113,17 +134,6 @@ function fallback(request: ValidatedRequest) {
 }
 
 async function askQwen(request: ValidatedRequest): Promise<JudgeResult | null> {
-	const apiKey = env.QWEN_API_KEY?.trim();
-	if (!apiKey) return null;
-
-	const baseUrl = (env.QWEN_BASE_URL?.trim() || DEFAULT_BASE_URL).replace(/\/+$/, '');
-	const chatCompletionsUrl = baseUrl.endsWith('/chat/completions')
-		? baseUrl
-		: `${baseUrl}/chat/completions`;
-	const model = env.QWEN_MODEL?.trim() || DEFAULT_MODEL;
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), 10_000);
-
 	const systemPrompt = `You are Qwen, the smug but fair judge in a fictional meme betting game.
 Compare two original fictional meme cards against one absurd situation and choose the card that semantically matches it best.
 Return only a valid JSON object with winner, confidence, reason, and roast. Winner must be "player" or "opponent". Confidence is an integer from 50 to 99. Reason is one or two short sentences. Roast is brief and criticises only the gameplay decision, never the person. Keep it playful and safe. No slurs, harassment, threats, sexual content, politics, violence, protected traits, appearance, family, health, or identity references.`;
@@ -140,37 +150,12 @@ Description: ${request.opponentCard.description}
 Traits: ${request.opponentCard.traits.join(', ')}
 
 Judge the semantic match fairly. Return JSON only.`;
-
-	try {
-		const response = await fetch(chatCompletionsUrl, {
-			method: 'POST',
-			headers: {
-				Authorization: `Bearer ${apiKey}`,
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify({
-				model,
-				stream: false,
-				temperature: 0.35,
-				max_tokens: 400,
-				messages: [
-					{ role: 'system', content: systemPrompt },
-					{ role: 'user', content: userPrompt }
-				]
-			}),
-			signal: controller.signal
-		});
-		if (!response.ok) return null;
-		const payload = asRecord(await response.json());
-		const choices = Array.isArray(payload?.choices) ? payload.choices : [];
-		const firstChoice = asRecord(choices[0]);
-		const message = asRecord(firstChoice?.message);
-		return parseJudgeResult(message?.content);
-	} catch {
-		return null;
-	} finally {
-		clearTimeout(timeout);
-	}
+	const content = await requestQwenContent(systemPrompt, userPrompt, {
+		maxTokens: 400,
+		temperature: 0.35,
+		timeoutMs: 10_000
+	});
+	return parseJudgeResult(content);
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -181,7 +166,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		return json({ message: 'Malformed JSON request.' }, { status: 400 });
 	}
 
-	const validated = validateRequest(body);
+	const validated = await validateRequest(body);
 	if (!validated) return json({ message: 'Invalid judge request.' }, { status: 400 });
 
 	const qwenResult = await askQwen(validated);

@@ -7,7 +7,9 @@ Clout is fictional game currency. There is no real money, purchasing, cash-out, 
 ## Features
 
 - Complete five-round game loop with bankruptcy and final-score endings
-- 24 original emoji/CSS meme cards across six readable categories and 24 absurd situations
+- Three selectable curated worlds: Code & Office, Everyday Chaos, and Student Life
+- 48 original emoji/CSS meme cards plus 48 absurd curated situations
+- AI Custom mode that creates a new situation and four original cards before every round
 - 25%, 50%, and dramatic ALL IN Clout choices
 - Server-only Qwen judging through an OpenAI-compatible endpoint
 - Deterministic semantic fallback judge when Qwen is not configured or unavailable
@@ -65,6 +67,15 @@ OpenWebUI accepts the key as a Bearer token and exposes compatible models throug
 
 The browser sends the situation, selected card IDs, round, balance, and Clout amount to `POST /api/judge`. The server does not trust browser-provided card copy: it reloads both cards from the local catalog by ID, verifies that the situation is part of the game, validates numeric limits, and rejects duplicate cards.
 
+### Game worlds
+
+- **Code & Office:** deployments, meetings, bugs, Wi-Fi, and workplace chaos
+- **Everyday Chaos:** laundry, groceries, buses, snacks, and daily-life struggles
+- **Student Life:** assignments, exams, group projects, campus, and study sessions
+- **AI Custom:** the player describes a safe theme in up to 160 characters; Qwen creates a fresh situation, three player choices, and a hidden opponent card as each round begins
+
+AI Custom content is generated only on the server. Every generated round is strictly validated and attached to a signed, expiring round token. The judge verifies that token and reloads the generated cards from it, preventing browser-edited card text from becoming trusted prompt content. If Qwen is missing, slow, or returns invalid content, a rotating local custom-theme generator keeps the mode playable.
+
 When `QWEN_API_KEY` is configured, the server calls the configured OpenAI-compatible `/chat/completions` endpoint with an approximately 10-second timeout. A base that already ends in `/chat/completions` is also accepted. The prompt includes each trusted card's category, description, and traits and asks for a genuine semantic comparison with strict JSON. Winner, confidence, reason, and roast are validated, clamped, length-limited, and screened for unsafe topics before reaching the browser.
 
 ## Offline fallback judge
@@ -87,7 +98,9 @@ The verdict panel clearly labels results as either `QWEN VERDICT` or `EMERGENCY 
 
 - `src/lib/data`: meme-card and situation catalogs
 - `src/lib/game`: betting, round, rank, fallback-judge, and leaderboard logic
+- `src/lib/server`: server-only Qwen client and signed AI-round tokens
 - `src/lib/components`: reusable cards, controls, judging, results, and leaderboard UI
+- `src/routes/api/generate-round`: validated per-round AI Custom content generation
 - `src/routes/api/judge`: validated server-only Qwen integration
 - `src/routes/+page.svelte`: game-state orchestration and complete screen flow
 

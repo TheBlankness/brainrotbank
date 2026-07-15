@@ -3,12 +3,17 @@
 	import { onMount } from 'svelte';
 	import BetControls from '$lib/components/BetControls.svelte';
 	import CloutCounter from '$lib/components/CloutCounter.svelte';
+	import GeneratorPanel from '$lib/components/GeneratorPanel.svelte';
 	import JudgePanel from '$lib/components/JudgePanel.svelte';
 	import LeaderboardModal from '$lib/components/LeaderboardModal.svelte';
 	import MemeCard from '$lib/components/MemeCard.svelte';
 	import ResultPanel from '$lib/components/ResultPanel.svelte';
-	import { memeCardById } from '$lib/data/memeCards';
-	import { situations } from '$lib/data/situations';
+	import {
+		allStaticCardById,
+		allStaticSituations,
+		gameCategories,
+		getGameCategory
+	} from '$lib/data/contentPacks';
 	import { fallbackJudge } from '$lib/game/fallbackJudge';
 	import {
 		calculateBet,
@@ -25,8 +30,10 @@
 		saveLeaderboardEntry
 	} from '$lib/game/leaderboard';
 	import type {
+		GameCategoryId,
 		GamePhase,
 		GameState,
+		GeneratedRoundResponse,
 		JudgeResponse,
 		LeaderboardEntry,
 		MemeCard as MemeCardType
@@ -34,8 +41,10 @@
 
 	const PROGRESS_KEY = 'all-in-brainrot-progress-v1';
 	const SOUND_KEY = 'all-in-brainrot-sound-v1';
+	const categoryIds: GameCategoryId[] = ['code', 'everyday', 'student', 'ai'];
 	const gamePhases: GamePhase[] = [
 		'menu',
+		'generating',
 		'selecting',
 		'betting',
 		'judging',
@@ -43,8 +52,33 @@
 		'finished',
 		'bankrupt'
 	];
+	const categoryPreviews: Record<GameCategoryId, { emoji: string; label: string }[]> = {
+		code: [
+			{ emoji: '🦝', label: 'DEPLOY RACCOON' },
+			{ emoji: '🐹', label: 'PROD HAMSTER' },
+			{ emoji: '👻', label: 'DOCS GHOST' }
+		],
+		everyday: [
+			{ emoji: '🦥', label: 'MONDAY SLOTH' },
+			{ emoji: '🧺', label: 'LAUNDRY KRAKEN' },
+			{ emoji: '🧊', label: 'FRIDGE EXPLORER' }
+		],
+		student: [
+			{ emoji: '🦎', label: 'DEADLINE AXOLOTL' },
+			{ emoji: '🦇', label: 'LIBRARY BAT' },
+			{ emoji: '🪿', label: 'GROUP GOOSE' }
+		],
+		ai: [
+			{ emoji: '✨', label: 'QWEN MAKES IT' },
+			{ emoji: '🎲', label: 'NEW EACH ROUND' },
+			{ emoji: '🧬', label: 'YOUR THEME' }
+		]
+	};
 
-	function initialState(): GameState {
+	function initialState(
+		contentCategory: GameCategoryId = 'code',
+		customCategoryPrompt = ''
+	): GameState {
 		return {
 			phase: 'menu',
 			clout: INITIAL_CLOUT,
@@ -59,7 +93,11 @@
 			selectedBetPercent: null,
 			betAmount: 0,
 			lastVerdict: null,
-			verdictSource: null
+			verdictSource: null,
+			contentCategory,
+			customCategoryPrompt,
+			roundToken: null,
+			generationSource: null
 		};
 	}
 
@@ -71,23 +109,62 @@
 	let scoreSaved = $state(false);
 	let storageReady = $state(false);
 	let statusMessage = $state('');
+	let selectedCategory = $state<GameCategoryId>('code');
+	let customThemePrompt = $state('');
+	let generationError = $state('');
 	let rank = $derived(getRank(state.clout));
 	let profit = $derived(state.clout - INITIAL_CLOUT);
 	let isFinalScreen = $derived(state.phase === 'finished' || state.phase === 'bankrupt');
+	let activeCategory = $derived(
+		getGameCategory(state.phase === 'menu' ? selectedCategory : state.contentCategory)
+	);
+	let previewCards = $derived(categoryPreviews[selectedCategory]);
+	let canStart = $derived(selectedCategory !== 'ai' || customThemePrompt.trim().length >= 3);
 
 	function isRecord(value: unknown): value is Record<string, unknown> {
 		return typeof value === 'object' && value !== null;
 	}
 
-	function cardFrom(value: unknown): MemeCardType | null {
+	function cardFrom(value: unknown, category: GameCategoryId): MemeCardType | null {
 		if (!isRecord(value) || typeof value.id !== 'string') return null;
-		return memeCardById.get(value.id) ?? null;
+		const staticCard = allStaticCardById.get(value.id);
+		if (staticCard) return staticCard;
+		if (
+			category !== 'ai' ||
+			!value.id.startsWith('ai-') ||
+			typeof value.name !== 'string' ||
+			value.name.length === 0 ||
+			value.name.length > 40 ||
+			typeof value.emoji !== 'string' ||
+			value.emoji.length === 0 ||
+			value.emoji.length > 12 ||
+			value.category !== 'AI Custom' ||
+			typeof value.description !== 'string' ||
+			value.description.length === 0 ||
+			value.description.length > 180 ||
+			!Array.isArray(value.traits) ||
+			value.traits.length < 3 ||
+			value.traits.length > 5 ||
+			!value.traits.every(
+				(trait) => typeof trait === 'string' && trait.length > 0 && trait.length <= 28
+			) ||
+			!['Common', 'Rare', 'Cursed', 'Legendary'].includes(String(value.rarity))
+		)
+			return null;
+		return value as MemeCardType;
 	}
 
 	function restoreProgress(): GameState | null {
 		try {
 			const parsed: unknown = JSON.parse(localStorage.getItem(PROGRESS_KEY) ?? 'null');
 			if (!isRecord(parsed)) return null;
+			const contentCategory = categoryIds.includes(parsed.contentCategory as GameCategoryId)
+				? (parsed.contentCategory as GameCategoryId)
+				: 'code';
+			const customCategoryPrompt =
+				contentCategory === 'ai' && typeof parsed.customCategoryPrompt === 'string'
+					? parsed.customCategoryPrompt.trim().slice(0, 160)
+					: '';
 			if (
 				typeof parsed.phase !== 'string' ||
 				!gamePhases.includes(parsed.phase as GamePhase) ||
@@ -98,18 +175,45 @@
 				!Number.isInteger(parsed.round) ||
 				Number(parsed.round) < 1 ||
 				Number(parsed.round) > MAX_ROUNDS ||
+				(contentCategory === 'ai' && customCategoryPrompt.length < 3)
+			)
+				return null;
+
+			if (parsed.phase === 'generating') {
+				if (contentCategory !== 'ai') return null;
+				return {
+					...initialState(contentCategory, customCategoryPrompt),
+					phase: 'generating',
+					clout: Number(parsed.clout),
+					round: Number(parsed.round),
+					wins: Number.isInteger(parsed.wins) ? Math.max(0, Number(parsed.wins)) : 0,
+					losses: Number.isInteger(parsed.losses) ? Math.max(0, Number(parsed.losses)) : 0
+				};
+			}
+
+			if (
 				typeof parsed.currentSituation !== 'string' ||
-				!situations.includes(parsed.currentSituation as (typeof situations)[number]) ||
+				parsed.currentSituation.length > 220 ||
+				(contentCategory === 'ai'
+					? parsed.currentSituation.length === 0
+					: !allStaticSituations.has(parsed.currentSituation)) ||
 				!Array.isArray(parsed.playerOptions)
 			)
 				return null;
 
 			const options = parsed.playerOptions
-				.map(cardFrom)
+				.map((card) => cardFrom(card, contentCategory))
 				.filter((card): card is MemeCardType => card !== null);
 			if (options.length !== 3 || new Set(options.map((card) => card.id)).size !== 3) return null;
-			const selectedPlayerCard = cardFrom(parsed.selectedPlayerCard);
-			const opponentCard = cardFrom(parsed.opponentCard);
+			const selectedPlayerCard = cardFrom(parsed.selectedPlayerCard, contentCategory);
+			const opponentCard = cardFrom(parsed.opponentCard, contentCategory);
+			const roundToken =
+				contentCategory === 'ai' &&
+				typeof parsed.roundToken === 'string' &&
+				parsed.roundToken.length <= 12_000
+					? parsed.roundToken
+					: null;
+			if (contentCategory === 'ai' && (!roundToken || !opponentCard)) return null;
 			const selectedBetPercent = [25, 50, 100].includes(Number(parsed.selectedBetPercent))
 				? (Number(parsed.selectedBetPercent) as 25 | 50 | 100)
 				: null;
@@ -142,14 +246,24 @@
 				currentSituation: parsed.currentSituation,
 				playerOptions: options,
 				selectedPlayerCard,
-				opponentCard: phase === 'selecting' || phase === 'betting' ? null : opponentCard,
-				selectedBetPercent: phase === 'judging' ? null : selectedBetPercent,
+				opponentCard:
+					contentCategory === 'ai' || (phase !== 'selecting' && phase !== 'betting')
+						? opponentCard
+						: null,
+				selectedBetPercent: parsed.phase === 'judging' ? null : selectedBetPercent,
 				betAmount: Number.isInteger(parsed.betAmount) ? Math.max(0, Number(parsed.betAmount)) : 0,
 				lastVerdict: phase === 'result' ? verdict : null,
 				verdictSource:
 					phase === 'result' &&
 					(parsed.verdictSource === 'qwen' || parsed.verdictSource === 'fallback')
 						? parsed.verdictSource
+						: null,
+				contentCategory,
+				customCategoryPrompt,
+				roundToken,
+				generationSource:
+					parsed.generationSource === 'qwen' || parsed.generationSource === 'fallback'
+						? parsed.generationSource
 						: null
 			};
 		} catch {
@@ -163,9 +277,12 @@
 		const saved = restoreProgress();
 		if (saved) {
 			state = saved;
+			selectedCategory = saved.contentCategory;
+			customThemePrompt = saved.customCategoryPrompt;
 			statusMessage = 'Your local run was restored.';
 		}
 		storageReady = true;
+		if (saved?.phase === 'generating') void generateCustomRound();
 	});
 
 	$effect(() => {
@@ -200,16 +317,95 @@
 		if (soundEnabled) playTone(520, 0.12);
 	}
 
-	function startGame() {
-		const round = dealRound();
-		state = {
-			...initialState(),
-			phase: 'selecting',
-			currentSituation: round.situation,
-			playerOptions: round.options
+	function readGeneratedRound(value: unknown): GeneratedRoundResponse | null {
+		if (!isRecord(value) || !Array.isArray(value.playerOptions)) return null;
+		const playerOptions = value.playerOptions
+			.map((card) => cardFrom(card, 'ai'))
+			.filter((card): card is MemeCardType => card !== null);
+		const opponentCard = cardFrom(value.opponentCard, 'ai');
+		if (
+			typeof value.situation !== 'string' ||
+			value.situation.length === 0 ||
+			value.situation.length > 220 ||
+			playerOptions.length !== 3 ||
+			!opponentCard ||
+			new Set([...playerOptions.map((card) => card.id), opponentCard.id]).size !== 4 ||
+			typeof value.roundToken !== 'string' ||
+			value.roundToken.length > 12_000 ||
+			(value.source !== 'qwen' && value.source !== 'fallback')
+		)
+			return null;
+		return {
+			situation: value.situation,
+			playerOptions,
+			opponentCard,
+			roundToken: value.roundToken,
+			source: value.source
 		};
+	}
+
+	async function generateCustomRound() {
+		if (state.contentCategory !== 'ai' || state.customCategoryPrompt.length < 3) return;
+		state.phase = 'generating';
+		generationError = '';
+		statusMessage = `Qwen is creating custom round ${state.round}.`;
+		try {
+			const response = await fetch('/api/generate-round', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					prompt: state.customCategoryPrompt,
+					round: state.round
+				})
+			});
+			if (!response.ok) throw new Error('Generation request failed.');
+			const generated = readGeneratedRound(await response.json());
+			if (!generated) throw new Error('Generated round was invalid.');
+			state.currentSituation = generated.situation;
+			state.playerOptions = generated.playerOptions;
+			state.opponentCard = generated.opponentCard;
+			state.roundToken = generated.roundToken;
+			state.generationSource = generated.source;
+			state.selectedPlayerCard = null;
+			state.selectedBetPercent = null;
+			state.betAmount = 0;
+			state.lastVerdict = null;
+			state.verdictSource = null;
+			state.phase = 'selecting';
+			statusMessage = `${generated.source === 'qwen' ? 'Qwen' : 'The local generator'} created round ${state.round}.`;
+			playTone(520, 0.15);
+		} catch {
+			generationError = 'The custom world could not be created. Please try the theme again.';
+			selectedCategory = 'ai';
+			customThemePrompt = state.customCategoryPrompt;
+			state.phase = 'menu';
+			localStorage.removeItem(PROGRESS_KEY);
+			statusMessage = generationError;
+		}
+	}
+
+	async function startGame() {
+		const category = selectedCategory;
+		const prompt = customThemePrompt
+			.replace(/[\u0000-\u001f\u007f<>`{}]/g, ' ')
+			.replace(/\s+/g, ' ')
+			.trim()
+			.slice(0, 160);
+		if (category === 'ai' && prompt.length < 3) return;
+
+		state = initialState(category, category === 'ai' ? prompt : '');
 		scoreSaved = false;
-		statusMessage = 'Round one dealt. Pick your most defensible bad idea.';
+		generationError = '';
+		if (category === 'ai') {
+			await generateCustomRound();
+			return;
+		}
+
+		const round = dealRound(category);
+		state.phase = 'selecting';
+		state.currentSituation = round.situation;
+		state.playerOptions = round.options;
+		statusMessage = `${getGameCategory(category).name} round one dealt. Pick your most defensible bad idea.`;
 		playTone(420, 0.12);
 	}
 
@@ -237,7 +433,8 @@
 					opponentCard,
 					betAmount: state.betAmount,
 					currentClout: state.clout,
-					round: state.round
+					round: state.round,
+					roundToken: state.roundToken ?? undefined
 				})
 			});
 			if (!response.ok) throw new Error('Judge unavailable.');
@@ -265,11 +462,14 @@
 
 	async function placeBet(percent: 25 | 50 | 100) {
 		if (state.phase !== 'betting' || !state.selectedPlayerCard || state.clout <= 0) return;
+		if (state.contentCategory === 'ai' && (!state.opponentCard || !state.roundToken)) return;
 		const betAmount = calculateBet(state.clout, percent);
 		if (betAmount > state.clout) return;
 		state.selectedBetPercent = percent;
 		state.betAmount = betAmount;
-		state.opponentCard = chooseOpponent(state.selectedPlayerCard);
+		if (state.contentCategory !== 'ai') {
+			state.opponentCard = chooseOpponent(state.selectedPlayerCard, state.contentCategory);
+		}
 		state.phase = 'judging';
 		statusMessage = `Judging round ${state.round}. All controls are locked.`;
 		playTone(percent === 100 ? 150 : 280, 0.18);
@@ -301,7 +501,7 @@
 				: `You lost ${betAmount.toLocaleString()} fictional Clout.`;
 	}
 
-	function continueGame() {
+	async function continueGame() {
 		if (state.phase !== 'result') return;
 		if (state.clout <= 0) {
 			state.phase = 'bankrupt';
@@ -314,16 +514,27 @@
 			return;
 		}
 
-		const next = dealRound(state.currentSituation);
+		const previousSituation = state.currentSituation;
 		state.round += 1;
-		state.currentSituation = next.situation;
-		state.playerOptions = next.options;
+		state.currentSituation = '';
+		state.playerOptions = [];
 		state.selectedPlayerCard = null;
 		state.opponentCard = null;
 		state.selectedBetPercent = null;
 		state.betAmount = 0;
 		state.lastVerdict = null;
 		state.verdictSource = null;
+		state.roundToken = null;
+		state.generationSource = null;
+
+		if (state.contentCategory === 'ai') {
+			await generateCustomRound();
+			return;
+		}
+
+		const next = dealRound(state.contentCategory, previousSituation);
+		state.currentSituation = next.situation;
+		state.playerOptions = next.options;
 		state.phase = 'selecting';
 		statusMessage = `Round ${state.round} dealt.`;
 	}
@@ -339,7 +550,11 @@
 			losses: state.losses,
 			roundsCompleted: state.round,
 			rank,
-			createdAt: new Date().toISOString()
+			createdAt: new Date().toISOString(),
+			category:
+				state.contentCategory === 'ai'
+					? `AI: ${state.customCategoryPrompt}`.slice(0, 40)
+					: getGameCategory(state.contentCategory).name
 		});
 		scoreSaved = true;
 		statusMessage = `Score saved locally as ${playerName}.`;
@@ -384,9 +599,55 @@
 				<p class="subtitle">
 					Risk fictional Clout on terrible memes. Let Qwen judge your decisions.
 				</p>
+				<div class="category-picker" aria-label="Choose a meme world">
+					<div class="category-picker-title">
+						<span>CHOOSE YOUR MEME WORLD</span><small>4 WAYS TO ROT</small>
+					</div>
+					<div class="category-grid">
+						{#each gameCategories as category}
+							<button
+								type="button"
+								class:selected={selectedCategory === category.id}
+								style={`--category-accent:${category.accent}`}
+								aria-pressed={selectedCategory === category.id}
+								onclick={() => {
+									selectedCategory = category.id;
+									generationError = '';
+								}}
+							>
+								<span aria-hidden="true">{category.icon}</span>
+								<div><strong>{category.name}</strong><small>{category.description}</small></div>
+							</button>
+						{/each}
+					</div>
+					{#if selectedCategory === 'ai'}
+						<label class="custom-theme" for="custom-theme">
+							<span>DESCRIBE YOUR CUSTOM MEME WORLD</span>
+							<textarea
+								id="custom-theme"
+								bind:value={customThemePrompt}
+								maxlength="160"
+								rows="2"
+								placeholder="e.g. Malaysian food stalls, football fans, fantasy taverns…"
+							></textarea>
+							<small
+								>{customThemePrompt.length}/160 · Qwen creates a new situation and four cards every
+								round.</small
+							>
+						</label>
+					{/if}
+					{#if generationError}<p class="generation-error">{generationError}</p>{/if}
+				</div>
 				<div class="hero-actions">
-					<button class="start-button" type="button" onclick={startGame}
-						>START WITH 1,000 CLOUT <span>→</span></button
+					<button
+						class="start-button"
+						type="button"
+						disabled={!canStart}
+						onclick={() => void startGame()}
+						>{selectedCategory === 'ai'
+							? 'GENERATE ROUND 1'
+							: `PLAY ${activeCategory.shortName.toUpperCase()}`}
+						<span>→</span></button
 					>
 					<button class="secondary-button" type="button" onclick={() => (showLeaderboard = true)}
 						>LOCAL LEADERBOARD</button
@@ -406,13 +667,15 @@
 						<span>STARTING BALANCE</span><strong>1,000 <small>CLOUT</small></strong>
 					</div>
 					<div class="mini-situation">
-						<small>TODAY'S BAD IDEA</small>
-						<p>Which meme would deploy on Friday and call it “agile”?</p>
+						<small>SELECTED MEME WORLD</small>
+						<p>{activeCategory.name}: {activeCategory.description}</p>
 					</div>
 					<div class="mini-cards">
-						<div><span>🦝</span><small>DEPLOY RACCOON</small></div>
-						<div class="selected-mini"><span>🐹</span><small>PROD HAMSTER</small></div>
-						<div><span>👻</span><small>DOCS GHOST</small></div>
+						{#each previewCards as card, index}
+							<div class:selected-mini={index === 1}>
+								<span>{card.emoji}</span><small>{card.label}</small>
+							</div>
+						{/each}
 					</div>
 					<div class="terminal-rule">
 						<span>01</span> PICK A MEME <i></i><span>02</span> RISK CLOUT <i></i><span>03</span> GET JUDGED
@@ -421,23 +684,26 @@
 			</section>
 
 			<div class="format-strip">
-				<div><strong>24</strong><span>ORIGINAL MEMES</span></div>
+				<div><strong>48</strong><span>CURATED MEMES</span></div>
+				<div><strong>4</strong><span>GAME MODES</span></div>
 				<div><strong>5</strong><span>ROUNDS</span></div>
 				<div><strong>0</strong><span>REAL CURRENCY</span></div>
-				<div><strong>∞</strong><span>BAD DECISIONS</span></div>
 			</div>
 		</main>
 	{:else}
 		<main class="game-layout">
 			<header class="game-header">
-				<button
-					class="mini-logo"
-					type="button"
-					onclick={() => {
-						state = initialState();
-						localStorage.removeItem(PROGRESS_KEY);
-					}}>ALL IN: <span>BRAINROT</span></button
-				>
+				<div class="brand-stack">
+					<button
+						class="mini-logo"
+						type="button"
+						onclick={() => {
+							state = initialState(selectedCategory);
+							localStorage.removeItem(PROGRESS_KEY);
+						}}>ALL IN: <span>BRAINROT</span></button
+					>
+					<small class="category-tag">{activeCategory.icon} {activeCategory.name}</small>
+				</div>
 				<div class="round-progress" aria-label={`Round ${state.round} of ${state.maxRounds}`}>
 					<div class="progress-copy">
 						<span>ROUND {state.round}/{state.maxRounds}</span><small
@@ -454,13 +720,19 @@
 				<CloutCounter amount={state.clout} />
 			</header>
 
-			{#if state.phase === 'selecting' || state.phase === 'betting'}
+			{#if state.phase === 'generating'}
+				<section class="center-stage">
+					<GeneratorPanel prompt={state.customCategoryPrompt} round={state.round} />
+				</section>
+			{:else if state.phase === 'selecting' || state.phase === 'betting'}
 				<section class="play-screen">
 					<div class="situation-card">
 						<div class="situation-meta">
-							<span>SITUATION #{String(state.round).padStart(2, '0')}</span><span
-								>CHOOSE WISELY-ISH</span
-							>
+							<span>SITUATION #{String(state.round).padStart(2, '0')}</span><span>
+								{activeCategory.name}{state.contentCategory === 'ai'
+									? ` · ${state.generationSource === 'qwen' ? 'QWEN MADE' : 'LOCAL MADE'}`
+									: ''}
+							</span>
 						</div>
 						<h2>{state.currentSituation}</h2>
 						<div class="tape">SEMANTIC CHAOS DETECTED</div>
@@ -526,13 +798,13 @@
 						betAmount={state.betAmount}
 						clout={state.clout}
 						allIn={state.selectedBetPercent === 100}
-						onContinue={continueGame}
+						onContinue={() => void continueGame()}
 					/>
 				</section>
 			{:else if isFinalScreen}
 				<section class:bankrupt={state.phase === 'bankrupt'} class="end-screen">
 					<p class="end-kicker">
-						RUN COMPLETE // {state.round} ROUND{state.round === 1 ? '' : 'S'} SURVIVED
+						{activeCategory.name.toUpperCase()} // {state.round} ROUND{state.round === 1 ? '' : 'S'} SURVIVED
 					</p>
 					<div class="end-icon" aria-hidden="true">{state.phase === 'bankrupt' ? '📉' : '🏆'}</div>
 					<h1>{state.phase === 'bankrupt' ? 'BANKRUPT' : 'CLOUT SECURED'}</h1>
@@ -578,7 +850,9 @@
 						</div>
 					</div>
 					<div class="end-actions">
-						<button class="primary-button" type="button" onclick={startGame}>PLAY AGAIN</button>
+						<button class="primary-button" type="button" onclick={() => void startGame()}
+							>PLAY AGAIN</button
+						>
 						<button class="secondary-button" type="button" onclick={() => (showLeaderboard = true)}
 							>LEADERBOARD</button
 						>
@@ -727,11 +1001,134 @@
 		font-size: clamp(0.98rem, 2vw, 1.18rem);
 		line-height: 1.55;
 	}
+	.category-picker {
+		margin-top: 1.1rem;
+		padding: 0.7rem;
+		border: 1px solid rgba(255, 255, 255, 0.09);
+		border-radius: 0.9rem;
+		background: rgba(4, 4, 12, 0.48);
+	}
+	.category-picker-title {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		margin-bottom: 0.55rem;
+	}
+	.category-picker-title span {
+		color: var(--purple-soft);
+		font-size: 0.61rem;
+		font-weight: 950;
+		letter-spacing: 0.14em;
+	}
+	.category-picker-title small {
+		color: #6f6b80;
+		font-size: 0.52rem;
+		font-weight: 850;
+		letter-spacing: 0.1em;
+	}
+	.category-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.42rem;
+	}
+	.category-grid button {
+		display: grid;
+		min-width: 0;
+		grid-template-columns: auto 1fr;
+		gap: 0.55rem;
+		align-items: center;
+		padding: 0.56rem 0.62rem;
+		border: 1px solid rgba(255, 255, 255, 0.09);
+		border-radius: 0.65rem;
+		background: rgba(255, 255, 255, 0.025);
+		color: white;
+		text-align: left;
+		transition:
+			border-color 150ms ease,
+			background 150ms ease,
+			transform 150ms ease;
+	}
+	.category-grid button:hover {
+		transform: translateY(-1px);
+		border-color: color-mix(in srgb, var(--category-accent) 55%, transparent);
+	}
+	.category-grid button.selected {
+		border-color: var(--category-accent);
+		background: color-mix(in srgb, var(--category-accent) 9%, transparent);
+		box-shadow: inset 3px 0 0 var(--category-accent);
+	}
+	.category-grid button > span {
+		font-size: 1.25rem;
+		filter: drop-shadow(0 4px 5px rgba(0, 0, 0, 0.35));
+	}
+	.category-grid button div {
+		display: flex;
+		min-width: 0;
+		flex-direction: column;
+	}
+	.category-grid button strong {
+		font-size: 0.68rem;
+		letter-spacing: 0.02em;
+	}
+	.category-grid button small {
+		margin-top: 0.13rem;
+		overflow: hidden;
+		color: #858194;
+		font-size: 0.54rem;
+		line-height: 1.25;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.custom-theme {
+		display: flex;
+		flex-direction: column;
+		margin-top: 0.55rem;
+		padding: 0.55rem;
+		border: 1px solid rgba(189, 165, 255, 0.2);
+		border-radius: 0.65rem;
+		background: rgba(139, 92, 246, 0.055);
+	}
+	.custom-theme > span {
+		margin-bottom: 0.35rem;
+		color: var(--purple-soft);
+		font-size: 0.56rem;
+		font-weight: 900;
+		letter-spacing: 0.11em;
+	}
+	.custom-theme textarea {
+		width: 100%;
+		min-height: 3.25rem;
+		padding: 0.55rem 0.62rem;
+		resize: vertical;
+		border: 1px solid rgba(255, 255, 255, 0.12);
+		border-radius: 0.5rem;
+		outline: none;
+		background: rgba(0, 0, 0, 0.26);
+		color: white;
+		font-size: 0.72rem;
+		line-height: 1.35;
+	}
+	.custom-theme textarea:focus {
+		border-color: var(--purple-soft);
+		box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.11);
+	}
+	.custom-theme small {
+		margin-top: 0.3rem;
+		color: #777386;
+		font-size: 0.52rem;
+		line-height: 1.35;
+	}
+	.generation-error {
+		margin: 0.55rem 0 0;
+		color: #ff8da3;
+		font-size: 0.65rem;
+		font-weight: 750;
+	}
 	.hero-actions {
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.75rem;
-		margin: 1.6rem 0 1rem;
+		margin: 0.85rem 0 0.75rem;
 	}
 	.start-button {
 		display: flex;
@@ -757,6 +1154,13 @@
 	.start-button:hover {
 		transform: translateY(-3px);
 		box-shadow: 0 0 38px rgba(199, 255, 65, 0.38);
+	}
+	.start-button:disabled {
+		cursor: not-allowed;
+		filter: grayscale(0.7);
+		opacity: 0.42;
+		transform: none;
+		box-shadow: none;
 	}
 	.secondary-button {
 		padding: 0.9rem 1rem;
@@ -969,6 +1373,12 @@
 	.game-header > :last-child {
 		justify-self: end;
 	}
+	.brand-stack {
+		display: flex;
+		min-width: 0;
+		flex-direction: column;
+		align-items: flex-start;
+	}
 	.mini-logo {
 		border: 0;
 		background: none;
@@ -981,6 +1391,14 @@
 	}
 	.mini-logo span {
 		color: var(--purple-soft);
+	}
+	.category-tag {
+		margin-top: 0.2rem;
+		color: var(--muted);
+		font-size: 0.55rem;
+		font-weight: 850;
+		letter-spacing: 0.07em;
+		text-transform: uppercase;
 	}
 	.round-progress {
 		min-width: min(290px, 35vw);
@@ -1421,6 +1839,10 @@
 		}
 		.hero-actions {
 			display: grid;
+		}
+		.category-grid button small,
+		.category-picker-title small {
+			display: none;
 		}
 		.format-strip {
 			display: grid;

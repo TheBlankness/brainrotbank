@@ -3,12 +3,12 @@
 
 	const POSTER_SIZE = 1080;
 	const fighters = [
-		{ emoji: '😩', name: 'Monday Mood', x: 9, tilt: -8 },
-		{ emoji: '😎', name: 'Zero-Context Confidence', x: 25, tilt: 5 },
-		{ emoji: '😵', name: 'Wi-Fi Panic', x: 41, tilt: -3 },
-		{ emoji: '😱', name: 'Deadline Panic', x: 59, tilt: 4 },
-		{ emoji: '🫡', name: 'Reply-All Hero', x: 75, tilt: -5 },
-		{ emoji: '🤡', name: 'Pure Chaos', x: 91, tilt: 7 }
+		{ emoji: '🦥', name: 'Monday Mood', x: 9, tilt: -8 },
+		{ emoji: '🦚', name: 'Zero-Context Confidence', x: 25, tilt: 5 },
+		{ emoji: '🦑', name: 'Wi-Fi Panic', x: 41, tilt: -3 },
+		{ emoji: '🐇', name: 'Deadline Panic', x: 59, tilt: 4 },
+		{ emoji: '🦜', name: 'Reply-All Hero', x: 75, tilt: -5 },
+		{ emoji: '🦄', name: 'Pure Chaos', x: 91, tilt: 7 }
 	];
 
 	let scale = $state(1);
@@ -121,8 +121,8 @@
 				</div>
 			</section>
 
-			<section class="smallings" aria-label="Relatable everyday meme reactions">
-				<p><span>⚠</span> EVERYDAY MEMES, ASSEMBLE! <span>⚠</span></p>
+			<section class="smallings" aria-label="Relatable meme archetypes">
+				<p><span>⚠</span> THE MEME SQUAD, ASSEMBLE! <span>⚠</span></p>
 				<div class="fighter-line">
 					{#each fighters as fighter}
 						<div
@@ -140,8 +140,8 @@
 
 			<footer class="poster-footer">
 				<div class="infinite-copy">
-					<strong>ENDLESS FUN.</strong><strong>MAXIMUM BRAINROT.</strong><strong
-						>ZERO REAL MONEY.</strong
+					<strong>3 CURATED WORLDS.</strong><strong>1 AI CUSTOM MODE.</strong><strong
+						>ENDLESS BRAINROT.</strong
 					>
 				</div>
 				<a href="/" aria-label="Play ALL IN BRAINROT now"
