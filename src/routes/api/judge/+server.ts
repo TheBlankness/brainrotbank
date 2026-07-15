@@ -117,6 +117,9 @@ async function askQwen(request: ValidatedRequest): Promise<JudgeResult | null> {
 	if (!apiKey) return null;
 
 	const baseUrl = (env.QWEN_BASE_URL?.trim() || DEFAULT_BASE_URL).replace(/\/+$/, '');
+	const chatCompletionsUrl = baseUrl.endsWith('/chat/completions')
+		? baseUrl
+		: `${baseUrl}/chat/completions`;
 	const model = env.QWEN_MODEL?.trim() || DEFAULT_MODEL;
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -127,17 +130,19 @@ Return only a valid JSON object with winner, confidence, reason, and roast. Winn
 	const userPrompt = `Situation: ${request.situation}
 
 Player card: ${request.playerCard.name}
+Category: ${request.playerCard.category}
 Description: ${request.playerCard.description}
 Traits: ${request.playerCard.traits.join(', ')}
 
 Opponent card: ${request.opponentCard.name}
+Category: ${request.opponentCard.category}
 Description: ${request.opponentCard.description}
 Traits: ${request.opponentCard.traits.join(', ')}
 
 Judge the semantic match fairly. Return JSON only.`;
 
 	try {
-		const response = await fetch(`${baseUrl}/chat/completions`, {
+		const response = await fetch(chatCompletionsUrl, {
 			method: 'POST',
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
@@ -145,8 +150,9 @@ Judge the semantic match fairly. Return JSON only.`;
 			},
 			body: JSON.stringify({
 				model,
+				stream: false,
 				temperature: 0.35,
-				max_tokens: 220,
+				max_tokens: 400,
 				messages: [
 					{ role: 'system', content: systemPrompt },
 					{ role: 'user', content: userPrompt }

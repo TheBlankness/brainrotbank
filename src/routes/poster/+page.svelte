@@ -3,12 +3,12 @@
 
 	const POSTER_SIZE = 1080;
 	const fighters = [
-		{ emoji: '🦝', name: 'Deploy Raccoon', x: 9, tilt: -8 },
-		{ emoji: '🐸', name: 'Deadline Frog', x: 25, tilt: 5 },
-		{ emoji: '🐹', name: 'Prod Hamster', x: 41, tilt: -3 },
-		{ emoji: '🐦', name: 'Chaos Pigeon', x: 59, tilt: 4 },
-		{ emoji: '👺', name: 'Corp Goblin', x: 75, tilt: -5 },
-		{ emoji: '🧙', name: 'Tired Wizard', x: 91, tilt: 7 }
+		{ emoji: '😩', name: 'Monday Mood', x: 9, tilt: -8 },
+		{ emoji: '😎', name: 'Zero-Context Confidence', x: 25, tilt: 5 },
+		{ emoji: '😵', name: 'Wi-Fi Panic', x: 41, tilt: -3 },
+		{ emoji: '😱', name: 'Deadline Panic', x: 59, tilt: 4 },
+		{ emoji: '🫡', name: 'Reply-All Hero', x: 75, tilt: -5 },
+		{ emoji: '🤡', name: 'Pure Chaos', x: 91, tilt: 7 }
 	];
 
 	let scale = $state(1);
@@ -121,8 +121,8 @@
 				</div>
 			</section>
 
-			<section class="smallings" aria-label="The tiny meme fighters">
-				<p><span>⚠</span> SMALLINGS, ASSEMBLE! <span>⚠</span></p>
+			<section class="smallings" aria-label="Relatable everyday meme reactions">
+				<p><span>⚠</span> EVERYDAY MEMES, ASSEMBLE! <span>⚠</span></p>
 				<div class="fighter-line">
 					{#each fighters as fighter}
 						<div

@@ -25,7 +25,7 @@
 	class="meme-card rarity-{card.rarity.toLowerCase()}"
 	{disabled}
 	aria-pressed={selected}
-	aria-label={`Choose ${card.name}: ${card.description}`}
+	aria-label={`Choose ${card.name}, ${card.category}: ${card.description}`}
 	onclick={onSelect}
 >
 	{#if label}<span class="card-label">{label}</span>{/if}
@@ -36,7 +36,10 @@
 	</div>
 	<div class="card-copy">
 		<div class="card-topline">
-			<span class="rarity">{card.rarity}</span>
+			<div class="card-taxonomy">
+				<span class="category">{card.category}</span>
+				<span class="rarity">{card.rarity}</span>
+			</div>
 			<span class="card-id">#{card.id.slice(0, 3).toUpperCase()}</span>
 		</div>
 		<h3>{card.name}</h3>
@@ -173,9 +176,25 @@
 		align-items: center;
 		justify-content: space-between;
 	}
+	.card-taxonomy {
+		display: flex;
+		gap: 0.35rem;
+		align-items: center;
+	}
+	.category {
+		padding: 0.18rem 0.35rem;
+		border: 1px solid rgba(189, 165, 255, 0.2);
+		border-radius: 0.3rem;
+		background: rgba(139, 92, 246, 0.09);
+		color: var(--purple-soft);
+		font-size: 0.54rem;
+		font-weight: 900;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
 	.rarity {
 		color: var(--card-accent);
-		font-size: 0.64rem;
+		font-size: 0.54rem;
 		font-weight: 900;
 		letter-spacing: 0.14em;
 		text-transform: uppercase;

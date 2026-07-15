@@ -1,9 +1,18 @@
 export type Rarity = 'Common' | 'Rare' | 'Cursed' | 'Legendary';
 
+export type MemeCategory =
+	| 'Tech Trouble'
+	| 'Office Life'
+	| 'Boss Energy'
+	| 'Deadline Panic'
+	| 'Mystic Weirdness'
+	| 'Pure Chaos';
+
 export type MemeCard = {
 	id: string;
 	name: string;
 	emoji: string;
+	category: MemeCategory;
 	description: string;
 	traits: string[];
 	rarity: Rarity;

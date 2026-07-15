@@ -7,7 +7,7 @@ Clout is fictional game currency. There is no real money, purchasing, cash-out, 
 ## Features
 
 - Complete five-round game loop with bankruptcy and final-score endings
-- 24 original emoji/CSS meme cards and 24 absurd situations
+- 24 original emoji/CSS meme cards across six readable categories and 24 absurd situations
 - 25%, 50%, and dramatic ALL IN Clout choices
 - Server-only Qwen judging through an OpenAI-compatible endpoint
 - Deterministic semantic fallback judge when Qwen is not configured or unavailable
@@ -29,8 +29,8 @@ Copy `.env.example` to `.env` and optionally add Qwen credentials. The game work
 
 ```env
 QWEN_API_KEY=
-QWEN_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-QWEN_MODEL=qwen-plus
+QWEN_BASE_URL=https://openwebui.sisedu.org/api
+QWEN_MODEL=qwen3.5:122b
 ```
 
 Start the development server:
@@ -48,15 +48,28 @@ yarn preview
 
 Never use a `PUBLIC_` prefix for `QWEN_API_KEY`; the key must remain server-only.
 
+### OpenWebUI setup for `qwen3.5:122b`
+
+The admin page at `https://openwebui.sisedu.org/admin/settings/models` is a management screen, not an API base URL. Configure OpenWebUI and the game as follows:
+
+1. In **Admin Panel → Settings → General**, enable **API Keys**.
+2. In **Admin Panel → Settings → Models**, verify that the exact model ID `qwen3.5:122b` exists and is available to the account that will own the key.
+3. Open your profile menu, then **Settings → Account → API Keys**, and generate a key for this game.
+4. If endpoint restrictions are enabled, allow at least `/api/chat/completions` for that key.
+5. Put the generated key in the server-only `.env` file as `QWEN_API_KEY`, using the base URL and model shown above.
+6. Restart the development server after changing `.env`.
+
+OpenWebUI accepts the key as a Bearer token and exposes compatible models through `POST /api/chat/completions`. See the official [API endpoint reference](https://docs.openwebui.com/reference/api-endpoints/) and [API-key guide](https://docs.openwebui.com/features/authentication-access/api-keys/).
+
 ## How judging works
 
 The browser sends the situation, selected card IDs, round, balance, and Clout amount to `POST /api/judge`. The server does not trust browser-provided card copy: it reloads both cards from the local catalog by ID, verifies that the situation is part of the game, validates numeric limits, and rejects duplicate cards.
 
-When `QWEN_API_KEY` is configured, the server calls the OpenAI-compatible `/chat/completions` endpoint with an approximately 10-second timeout. The prompt asks for a genuine semantic comparison and strict JSON. Winner, confidence, reason, and roast are validated, clamped, length-limited, and screened for unsafe topics before reaching the browser.
+When `QWEN_API_KEY` is configured, the server calls the configured OpenAI-compatible `/chat/completions` endpoint with an approximately 10-second timeout. A base that already ends in `/chat/completions` is also accepted. The prompt includes each trusted card's category, description, and traits and asks for a genuine semantic comparison with strict JSON. Winner, confidence, reason, and roast are validated, clamped, length-limited, and screened for unsafe topics before reaching the browser.
 
 ## Offline fallback judge
 
-If credentials are missing, the service times out, the endpoint fails, or Qwen returns invalid output, the same request is judged locally. The fallback extracts situation keywords, expands a small set of related concepts, compares them with each card's trusted traits and description, and adds a seeded tie-break factor. Identical round inputs produce consistent results and neither side receives a built-in advantage.
+If credentials are missing, the service times out, the endpoint fails, or Qwen returns invalid output, the same request is judged locally. The fallback extracts situation keywords, expands a small set of related concepts, compares them with each card's trusted category, traits, and description, and adds a seeded tie-break factor. Identical round inputs produce consistent results and neither side receives a built-in advantage.
 
 The verdict panel clearly labels results as either `QWEN VERDICT` or `EMERGENCY LOCAL VERDICT`.
 

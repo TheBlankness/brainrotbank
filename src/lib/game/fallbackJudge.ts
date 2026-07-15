@@ -70,7 +70,9 @@ function tokenize(value: string): string[] {
 
 function scoreCard(situation: string, card: MemeCard, seed: string): number {
 	const situationWords = tokenize(situation);
-	const cardWords = new Set(tokenize(`${card.name} ${card.description} ${card.traits.join(' ')}`));
+	const cardWords = new Set(
+		tokenize(`${card.category} ${card.name} ${card.description} ${card.traits.join(' ')}`)
+	);
 	let score = 0;
 
 	for (const word of situationWords) {
