@@ -1,14 +1,103 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { IconifyIcon } from '@iconify/svelte';
+	import catWithWrySmile from '@iconify/icons-fluent-emoji/cat-with-wry-smile';
+	import cooking from '@iconify/icons-fluent-emoji/cooking';
+	import dizzy from '@iconify/icons-fluent-emoji/dizzy';
+	import hamster from '@iconify/icons-fluent-emoji/hamster';
+	import joystick from '@iconify/icons-fluent-emoji/joystick';
+	import lowBattery from '@iconify/icons-fluent-emoji/low-battery';
+	import penguin from '@iconify/icons-fluent-emoji/penguin';
+	import popcorn from '@iconify/icons-fluent-emoji/popcorn';
+	import raccoon from '@iconify/icons-fluent-emoji/raccoon';
+	import wearyCat from '@iconify/icons-fluent-emoji/weary-cat';
+	import PosterMemeCard from '$lib/components/PosterMemeCard.svelte';
 
 	const POSTER_SIZE = 1080;
-	const fighters = [
-		{ emoji: '🦥', name: 'Monday Mood', x: 9, tilt: -8 },
-		{ emoji: '🦚', name: 'Zero-Context Confidence', x: 25, tilt: 5 },
-		{ emoji: '🦑', name: 'Wi-Fi Panic', x: 41, tilt: -3 },
-		{ emoji: '🐇', name: 'Deadline Panic', x: 59, tilt: 4 },
-		{ emoji: '🦜', name: 'Reply-All Hero', x: 75, tilt: -5 },
-		{ emoji: '🦄', name: 'Pure Chaos', x: 91, tilt: 7 }
+
+	function unwrapIcon(iconModule: unknown): IconifyIcon {
+		let icon = iconModule;
+
+		while (icon && typeof icon === 'object' && !('body' in icon) && 'default' in icon) {
+			icon = (icon as { default: unknown }).default;
+		}
+
+		if (!icon || typeof icon !== 'object' || !('body' in icon)) {
+			throw new Error('Unable to load local Fluent Emoji SVG data.');
+		}
+
+		return icon as IconifyIcon;
+	}
+
+	type MemeSquadMember = {
+		title: string;
+		icon: {
+			mascot: IconifyIcon;
+			prop?: IconifyIcon;
+			effect?: IconifyIcon;
+			variant: 'cook' | 'over' | 'skill' | 'cinema' | 'round';
+		};
+		rotation: number;
+		accent: string;
+		description: string;
+	};
+
+	const memeSquad: MemeSquadMember[] = [
+		{
+			title: 'LET HIM COOK',
+			icon: {
+				mascot: unwrapIcon(catWithWrySmile),
+				prop: unwrapIcon(cooking),
+				variant: 'cook'
+			},
+			rotation: -3.4,
+			accent: '#00eaff',
+			description: 'A confident cat chef bringing the frying pan and an unreasonably bold plan.'
+		},
+		{
+			title: "IT'S SO OVER",
+			icon: {
+				mascot: unwrapIcon(wearyCat),
+				prop: unwrapIcon(lowBattery),
+				variant: 'over'
+			},
+			rotation: -1.7,
+			accent: '#8e78ff',
+			description: 'An exhausted cat with an empty battery and no hope left in the tank.'
+		},
+		{
+			title: 'SKILL ISSUE',
+			icon: {
+				mascot: unwrapIcon(raccoon),
+				prop: unwrapIcon(joystick),
+				variant: 'skill'
+			},
+			rotation: 2.9,
+			accent: '#caff37',
+			description: 'A smug raccoon gamer blaming the player instead of the impossible challenge.'
+		},
+		{
+			title: 'ABSOLUTE CINEMA',
+			icon: {
+				mascot: unwrapIcon(penguin),
+				prop: unwrapIcon(popcorn),
+				variant: 'cinema'
+			},
+			rotation: -2.3,
+			accent: '#ff4f9a',
+			description: 'A dramatic penguin watching the chaos unfold with a bucket of popcorn.'
+		},
+		{
+			title: 'ONE MORE ROUND',
+			icon: {
+				mascot: unwrapIcon(hamster),
+				effect: unwrapIcon(dizzy),
+				variant: 'round'
+			},
+			rotation: 3.5,
+			accent: '#00eaff',
+			description: 'A hypnotized hamster who definitely cannot stop after the next match.'
+		}
 	];
 
 	let scale = $state(1);
@@ -121,19 +210,31 @@
 				</div>
 			</section>
 
-			<section class="smallings" aria-label="Relatable meme archetypes">
-				<p><span>⚠</span> THE MEME SQUAD, ASSEMBLE! <span>⚠</span></p>
-				<div class="fighter-line">
-					{#each fighters as fighter}
-						<div
-							class="fighter"
-							style={`--x:${fighter.x};--tilt:${fighter.tilt}deg`}
-							aria-label={fighter.name}
-						>
-							<i class="weapon" aria-hidden="true"></i>
-							<span aria-hidden="true">{fighter.emoji}</span>
-							<small>{fighter.name}</small>
-						</div>
+			<section class="smallings" aria-labelledby="meme-squad-title">
+				<h2 id="meme-squad-title">
+					<svg class="squad-warning" viewBox="0 0 24 22" aria-hidden="true">
+						<path d="M12 1.5 23 20.5H1L12 1.5Z" fill="currentColor" />
+						<path
+							d="M12 7v6.5M12 17v.5"
+							stroke="#0b0915"
+							stroke-width="2.4"
+							stroke-linecap="round"
+						/>
+					</svg>
+					<span>THE MEME SQUAD, ASSEMBLE!</span>
+					<svg class="squad-warning" viewBox="0 0 24 22" aria-hidden="true">
+						<path d="M12 1.5 23 20.5H1L12 1.5Z" fill="currentColor" />
+						<path
+							d="M12 7v6.5M12 17v.5"
+							stroke="#0b0915"
+							stroke-width="2.4"
+							stroke-linecap="round"
+						/>
+					</svg>
+				</h2>
+				<div class="fighter-line" role="list" aria-label="Five familiar meme reactions">
+					{#each memeSquad as member (member.title)}
+						<PosterMemeCard {...member} />
 					{/each}
 				</div>
 			</section>
@@ -779,27 +880,42 @@
 		height: 184px;
 	}
 
-	.smallings > p {
+	.smallings > h2 {
 		position: absolute;
 		right: 0;
-		bottom: 9px;
+		bottom: 7px;
 		left: 0;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 11px;
 		margin: 0;
 		color: var(--acid);
 		font-family: Impact, sans-serif;
-		font-size: 21px;
+		font-size: 20px;
 		letter-spacing: 0.16em;
 		text-align: center;
 		text-shadow: 0 0 13px rgba(202, 255, 55, 0.3);
 	}
 
-	.smallings > p span {
+	.squad-warning {
+		width: 19px;
+		height: 18px;
+		flex: 0 0 auto;
 		color: var(--red);
+		filter: drop-shadow(0 0 6px rgba(255, 49, 93, 0.48));
 	}
 
 	.fighter-line {
 		position: absolute;
-		inset: 0 0 40px;
+		inset: 0 0 39px;
+		display: grid;
+		box-sizing: border-box;
+		grid-template-columns: repeat(5, 142px);
+		justify-content: center;
+		gap: 28px;
+		align-items: end;
+		padding: 20px 4px 3px;
 		border-bottom: 3px solid rgba(168, 137, 255, 0.32);
 	}
 
@@ -808,83 +924,52 @@
 		position: absolute;
 		left: 50%;
 		bottom: -4px;
-		width: 680px;
+		width: 820px;
 		height: 46px;
 		border-radius: 50%;
-		background: radial-gradient(ellipse, rgba(118, 87, 255, 0.28), transparent 67%);
+		background: radial-gradient(
+			ellipse,
+			rgba(0, 234, 255, 0.14),
+			rgba(118, 87, 255, 0.22) 38%,
+			transparent 69%
+		);
 		transform: translateX(-50%);
+		pointer-events: none;
 	}
 
-	.fighter {
+	.fighter-line::after {
+		content: 'SQUAD LINK // ONLINE // SQUAD LINK // ONLINE // SQUAD LINK // ONLINE';
 		position: absolute;
-		left: calc(var(--x) * 1%);
-		bottom: 1px;
-		display: flex;
-		width: 112px;
-		flex-direction: column;
-		align-items: center;
-		transform: translateX(-50%) rotate(var(--tilt));
-	}
-
-	.fighter > span {
-		position: relative;
-		z-index: 2;
-		font-size: 53px;
-		line-height: 1;
-		filter: drop-shadow(0 8px 7px rgba(0, 0, 0, 0.6));
-	}
-
-	.fighter small {
-		margin-top: 6px;
-		padding: 3px 5px;
-		border: 1px solid rgba(255, 255, 255, 0.13);
-		border-radius: 3px;
-		background: #0a0915;
-		color: #a9a5b7;
-		font-size: 7px;
-		font-weight: 900;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-		white-space: nowrap;
-	}
-
-	.weapon {
-		position: absolute;
-		z-index: 1;
-		right: 15px;
-		top: 11px;
-		width: 39px;
-		height: 27px;
-		border: 3px solid var(--cyan);
-		border-radius: 3px;
-		background: linear-gradient(145deg, #271c51, #090812);
-		box-shadow: 0 0 9px rgba(0, 234, 255, 0.35);
-		transform: rotate(-28deg);
-	}
-
-	.weapon::before {
-		content: '';
-		position: absolute;
-		left: -10px;
-		bottom: -10px;
-		width: 11px;
-		height: 19px;
-		border-radius: 2px;
-		background: var(--purple-hot);
-		transform: rotate(-26deg);
-	}
-
-	.weapon::after {
-		content: 'MEME';
-		position: absolute;
-		inset: 0;
-		display: grid;
-		place-items: center;
-		color: white;
+		z-index: -1;
+		right: 38px;
+		top: 3px;
+		left: 38px;
+		overflow: hidden;
+		color: rgba(0, 234, 255, 0.24);
 		font-size: 6px;
-		font-style: normal;
 		font-weight: 1000;
-		letter-spacing: 0.08em;
+		letter-spacing: 0.24em;
+		text-align: center;
+		white-space: nowrap;
+		pointer-events: none;
+	}
+
+	@media (max-width: 700px) {
+		.fighter-line {
+			grid-template-columns: none;
+			grid-auto-flow: column;
+			grid-auto-columns: 158px;
+			justify-content: start;
+			overflow-x: auto;
+			overflow-y: hidden;
+			padding-inline: 10px;
+			scroll-snap-type: x mandatory;
+			scrollbar-width: none;
+		}
+
+		.fighter-line::-webkit-scrollbar {
+			display: none;
+		}
 	}
 
 	.poster-footer {
